@@ -8,7 +8,7 @@ from urllib.parse import quote
 
 import requests
 from main import get_code_verifier, refresh_token, getClientId
-from PyQt5.QtCore import QUrl, Qt, QPropertyAnimation
+from PyQt5.QtCore import QUrl, Qt, QPropertyAnimation, QThreadPool, QRunnable, pyqtSignal, QObject
 from PyQt5.QtGui import QPixmap, QFont
 from PyQt5.QtWidgets import (
     QWidget,
@@ -18,7 +18,9 @@ from PyQt5.QtWidgets import (
     QDialog,
     QVBoxLayout,
     QLabel,
+    QToolBar,
     QPushButton,
+    QStackedWidget,
     QSizePolicy,
     QHBoxLayout,
     QScrollArea,
@@ -55,10 +57,14 @@ class AnimeWidget(QWidget):
         synopsis_label.setWordWrap(True)
         synopsis_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
-        image_label = QLabel()
-        pixmap = QPixmap()
-        pixmap.loadFromData(requests.get(result["main_picture"]["medium"]).content)
-        image_label.setPixmap(pixmap)
+        self.image_label = QLabel()
+
+        self.threadpool = QThreadPool()
+        image_loader = ImageLoader(result["main_picture"]["medium"])
+        image_loader.signals.finished.connect(self.on_image_loaded)
+        image_loader.signals.error.connect(self.on_image_error)
+        self.threadpool.start(image_loader)
+
 
         open_button = QPushButton("Open in browser")
         open_button.clicked.connect(
@@ -85,7 +91,7 @@ class AnimeWidget(QWidget):
         button_layout.addWidget(add_button)
         button_layout.addStretch(1)
 
-        h_layout.addWidget(image_label)
+        h_layout.addWidget(self.image_label)
         h_layout.addWidget(synopsis_label)
         h_layout.addLayout(button_layout)
 
@@ -117,23 +123,52 @@ class AnimeWidget(QWidget):
             }
             """
         )
+    def on_image_loaded(self, image_data):
+        pixmap = QPixmap()
+        pixmap.loadFromData(image_data)
+        self.image_label.setPixmap(pixmap)
 
+    def on_image_error(self, error_message):
+        print("Error loading image:", error_message)
+        # Handle the error (e.g., display a default image)
+
+    # Method to start loading the image
+    def load_image(self):
+        image_loader = ImageLoader(self.image_url)
+        image_loader.signals.finished.connect(self.on_image_loaded)
+        image_loader.signals.error.connect(self.on_image_error)
+        self.threadpool.start(image_loader)
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super(MainWindow, self).__init__()
         self.token_init()
 
-        self.toast_message = QLabel()
-        self.toast_message.setStyleSheet("background-color: #333; color: #FFF;")
-        self.toast_message.hide()  # Initially hidden
+        # Create the navigation bar
+        self.nav_bar = QToolBar("Navigation")
+        self.addToolBar(self.nav_bar)
+        self.nav_bar.setMovable(False)
 
-        self.toast_message_opacity = QGraphicsOpacityEffect(self.toast_message)
-        self.toast_message.setGraphicsEffect(self.toast_message_opacity)
+        # Add buttons to the navigation bar
+        search_button = QPushButton("Search", self)
+        anime_list_button = QPushButton("My Anime List", self)
+        self.nav_bar.addWidget(search_button)
+        self.nav_bar.addWidget(anime_list_button)
 
-        self.toast_message_animation = QPropertyAnimation(
-            self.toast_message_opacity, b"opacity"
-        )
+        # Initialize QStackedWidget
+        self.stacked_widget = QStackedWidget()
+        self.setCentralWidget(self.stacked_widget)
+
+        self.search_interface = SearchInterface()
+        self.anime_list_interface = AnimeListInterface()
+
+        self.stacked_widget.addWidget(self.search_interface)
+        self.stacked_widget.addWidget(self.anime_list_interface)
+
+        search_button.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(0))
+        anime_list_button.clicked.connect(self.show_and_update_anime_list)
+
+        
 
         self.window_size = (
             int(screen_size.width() * 0.35),
@@ -150,27 +185,6 @@ class MainWindow(QMainWindow):
             self.window_size[1],
         )
         self.setWindowTitle("MAL Adder")
-
-        self.search_box = QLineEdit()
-        self.search_box.returnPressed.connect(self.search)
-
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-
-        # Initialize a widget and a layout for the scroll area
-        self.scroll_widget = QWidget()
-        self.scroll_area.setWidget(self.scroll_widget)
-        self.layout = QVBoxLayout()
-        self.scroll_widget.setLayout(self.layout)
-
-        self.main_layout = QVBoxLayout()
-        self.central_widget = QWidget()
-        self.central_widget.setLayout(self.main_layout)
-        self.setCentralWidget(self.central_widget)
-
-        self.main_layout.addWidget(self.search_box)
-        self.main_layout.addWidget(self.scroll_area)
-        self.main_layout.addWidget(self.toast_message)
 
         self.setStyleSheet(
             """
@@ -202,7 +216,139 @@ class MainWindow(QMainWindow):
         )
 
         self.initUI()
+    
+    def show_and_update_anime_list(self):
+        # Switch to the AnimeListInterface
+        self.stacked_widget.setCurrentWidget(self.anime_list_interface)
 
+        # Update the anime list
+        self.update_anime_list()
+
+    def update_anime_list(self):
+        anime_list = get_mylist()  # Call your backend function to fetch the list
+        self.anime_list_interface.display_anime_list(anime_list)
+
+
+    def token_init(self):
+        global clientId
+        global token
+        global mal_folder
+
+        clientId = getClientId()
+        home = os.path.expanduser("~")
+
+        if os.name == "nt":  # Windows
+            mal_folder = os.path.join(home, "MAL")
+        else:  # other platforms
+            mal_folder = os.path.join(home, ".config", "MAL")
+
+        try:
+            os.makedirs(mal_folder, exist_ok=True)
+        except Exception as e:
+            print("Error creating directories:", e)
+
+        try:
+            with open(os.path.join(mal_folder, "token.json"), "r") as file:
+                token = json.load(file)
+                print("Token loaded from file.")
+                if self.is_token_expired():
+                    print("Token is expired, trying refresh")
+                    token = refresh_token()
+        except json.JSONDecodeError:
+            print("File is corrupted. Deleting file and getting new token.")
+            os.remove(os.path.join(mal_folder, "token.json"))
+            self.open_auth_window()
+        except FileNotFoundError:
+            print("Token file not found - Starting authentication process...")
+            self.open_auth_window()
+        except Exception as e:
+            print("Error", e)
+            print("Deleting file and getting new token.")
+            os.remove(os.path.join(mal_folder, "token.json"))
+            self.open_auth_window()
+
+    def is_token_expired(self):
+        global token
+        return token["expiration_time"] - int(time.time()) < 1209600
+
+    def open_auth_window(self):
+        self.auth_window = AuthWindow()
+        self.auth_window.show()
+
+    def initUI(self):
+        pass
+
+
+class AnimeListInterface(QWidget):
+    def __init__(self, parent=None):
+        super(AnimeListInterface, self).__init__(parent)
+
+        # Initialize the scroll area for displaying anime list
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+
+        # Initialize a widget and a layout for the scroll area
+        self.scroll_widget = QWidget()
+        self.scroll_area.setWidget(self.scroll_widget)
+        self.layout = QVBoxLayout()
+        self.scroll_widget.setLayout(self.layout)
+
+        # Set up the layout for this widget
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.addWidget(self.scroll_area)
+
+    def display_anime_list(self, anime_list):
+        # Clear the layout first
+        for i in reversed(range(self.layout.count())):
+            widget_to_remove = self.layout.itemAt(i).widget()
+            if widget_to_remove:
+                widget_to_remove.setParent(None)
+
+        # Add an AnimeWidget for each anime in the list
+        for anime in anime_list:
+            try:
+                anime_widget = AnimeWidget(anime)
+                self.layout.addWidget(anime_widget)
+                self.layout.addWidget(horizontal_line())
+            except Exception as e:
+                print("Error creating anime widget:", e)
+        self.layout.update()
+
+class SearchInterface(QWidget):
+    def __init__(self, parent=None):
+        super(SearchInterface, self).__init__(parent)
+
+        self.search_box = QLineEdit()
+        self.search_box.returnPressed.connect(self.search)
+
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+
+        # Initialize a widget and a layout for the scroll area
+        self.scroll_widget = QWidget()
+        self.scroll_area.setWidget(self.scroll_widget)
+        self.layout = QVBoxLayout()
+        self.scroll_widget.setLayout(self.layout)
+
+        self.main_layout = QVBoxLayout(self)
+        #self.setCentralWidget(self.central_widget)
+
+        self.toast_message = QLabel()
+        self.toast_message.setStyleSheet("background-color: #333; color: #FFF;")
+        self.toast_message.hide()  # Initially hidden
+
+        self.toast_message_opacity = QGraphicsOpacityEffect(self.toast_message)
+        self.toast_message.setGraphicsEffect(self.toast_message_opacity)
+
+        self.toast_message_animation = QPropertyAnimation(
+            self.toast_message_opacity, b"opacity"
+        )
+
+        self.main_layout.addWidget(self.search_box)
+        self.main_layout.addWidget(self.scroll_area)
+        self.main_layout.addWidget(self.toast_message)
+
+    
     def display_toast_message(self, message, duration=3000):
         # Show the message and then hide it after 'duration' milliseconds
         self.toast_message.setText(message)
@@ -271,54 +417,6 @@ class MainWindow(QMainWindow):
             self.layout.addWidget(anime_widget)
             self.layout.addWidget(horizontal_line())
 
-    def token_init(self):
-        global clientId
-        global token
-        global mal_folder
-
-        clientId = getClientId()
-        home = os.path.expanduser("~")
-
-        if os.name == "nt":  # Windows
-            mal_folder = os.path.join(home, "MAL")
-        else:  # other platforms
-            mal_folder = os.path.join(home, ".config", "MAL")
-
-        try:
-            os.makedirs(mal_folder, exist_ok=True)
-        except Exception as e:
-            print("Error creating directories:", e)
-
-        try:
-            with open(os.path.join(mal_folder, "token.json"), "r") as file:
-                token = json.load(file)
-                print("Token loaded from file.")
-                if self.is_token_expired():
-                    print("Token is expired, trying refresh")
-                    token = refresh_token()
-        except json.JSONDecodeError:
-            print("File is corrupted. Deleting file and getting new token.")
-            os.remove(os.path.join(mal_folder, "token.json"))
-            self.open_auth_window()
-        except FileNotFoundError:
-            print("Token file not found - Starting authentication process...")
-            self.open_auth_window()
-        except Exception as e:
-            print("Error", e)
-            print("Deleting file and getting new token.")
-            os.remove(os.path.join(mal_folder, "token.json"))
-            self.open_auth_window()
-
-    def is_token_expired(self):
-        global token
-        return token["expiration_time"] - int(time.time()) < 1209600
-
-    def open_auth_window(self):
-        self.auth_window = AuthWindow()
-        self.auth_window.show()
-
-    def initUI(self):
-        pass
 
 
 class AuthWindow(QDialog):
@@ -464,6 +562,59 @@ class BrowserWindow(QWebEngineView):
         self.confirm_close = False  # Don't show confirmation
         self.close()  # Close the window
 
+class ImageLoader(QRunnable):
+    def __init__(self, url):
+        super().__init__()
+        self.url = url
+        self.signals = ImageLoaderSignals()
+
+    def run(self):
+        try:
+            response = requests.get(self.url)
+            response.raise_for_status()
+            self.signals.finished.emit(response.content)
+        except Exception as e:
+            self.signals.error.emit(str(e))
+
+class ImageLoaderSignals(QObject):
+    finished = pyqtSignal(bytes)
+    error = pyqtSignal(str)
+
+def get_mylist():
+    url = "https://api.myanimelist.net/v2/users/@me/animelist?limit=1000&fields=id,title,mean,main_picture,alternative_titles,popularity,synopsis&nsfw=true"
+    headers = {"Authorization": f'Bearer {token["access_token"]}'}
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        reply = response.json()
+
+        anime_list = reply.get('data', [])
+        
+        indexed_nodes = []
+        for i, item in enumerate(anime_list, start=1):
+            node_dict = {
+                "id": item["node"]["id"] if "id" in item["node"] else None,
+                "title": item["node"]["title"] if "title" in item["node"] else None,
+                "main_picture": item["node"]["main_picture"]
+                if "main_picture" in item["node"]
+                else None,
+                "alternative_titles": item["node"]["alternative_titles"]
+                if "alternative_titles" in item["node"]
+                else None,
+                "popularity": item["node"]["popularity"]
+                if "popularity" in item["node"]
+                else None,
+                "synopsis": item["node"]["synopsis"]
+                if "synopsis" in item["node"]
+                else None,
+                "mean": item["node"]["mean"] if "mean" in item["node"] else None,
+            }
+
+            indexed_nodes.append(node_dict)
+        return indexed_nodes
+    except requests.exceptions.RequestException as e:
+        print("HTTP search error: ", e)
+        return []
 
 def add_anime(id_):
     global window

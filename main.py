@@ -153,6 +153,18 @@ def search_mal(query):
         print("HTTP search error: ", e)
         return []
 
+def get_mylist():
+    url = "https://api.myanimelist.net/v2/users/@me/animelist?limit=1000"
+    headers = {"Authorization": f'Bearer {token["access_token"]}'}
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        reply = response.json()
+        print(reply["data"])
+        return reply["data"]
+    except requests.exceptions.RequestException as e:
+        print("HTTP search error: ", e)
+        return []
 
 def add_anime(id_):
     url = f"https://api.myanimelist.net/v2/anime/{id_}/my_list_status"
