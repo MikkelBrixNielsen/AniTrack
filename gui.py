@@ -1,3 +1,4 @@
+import random
 import sys
 import json
 import os
@@ -36,6 +37,100 @@ clientId = None
 token = None
 mal_folder = None
 
+class AnimeListWidget(QWidget):
+    def __init__(self, result):
+        super(AnimeListWidget, self).__init__()
+
+        font = QFont()
+        font.setPointSize(18)  # Set the size
+        font.setBold(True)  # Make it bold
+        title = result["alternative_titles"]["en"] if "en" in result["alternative_titles"] and result["alternative_titles"]["en"] else result["title"]
+        # Widgets
+        title_label = QLabel(title)
+        title_label.setFont(font)
+        synopsis_label = QLabel(result["synopsis"][:500] + "...")
+        synopsis_label.setWordWrap(True)
+        synopsis_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
+        self.image_label = QLabel()
+
+        self.threadpool = QThreadPool()
+        image_loader = ImageLoader(result["main_picture"]["medium"])
+        image_loader.signals.finished.connect(self.on_image_loaded)
+        image_loader.signals.error.connect(self.on_image_error)
+        self.threadpool.start(image_loader)
+
+
+        open_button = QPushButton("Stream Here!")
+        open_button.clicked.connect(
+            lambda: webbrowser.open("crunchyroll.com/search?q=" + title.replace(" ", "%20"))
+        )
+
+        add_button = QPushButton("Browse Merch!")
+        add_button.clicked.connect(lambda: webbrowser.open("google.com/search?q=" + title.replace(" ", "+") + "+merchandise"))
+
+        # Layouts
+        main_layout = QVBoxLayout()
+        self.setLayout(main_layout)
+
+        main_layout.addWidget(title_label)
+
+        h_layout = QHBoxLayout()
+        main_layout.addLayout(h_layout)
+
+        button_layout = QVBoxLayout()
+        button_layout.addStretch(1)
+        button_layout.addWidget(open_button)
+        button_layout.addWidget(add_button)
+        button_layout.addStretch(1)
+
+        h_layout.addWidget(self.image_label)
+        h_layout.addWidget(synopsis_label)
+        h_layout.addLayout(button_layout)
+
+        self.setStyleSheet(
+            """
+            QDialog {
+                background-color: #333;
+            }
+            QLabel {
+                color: #FFF;
+                font-size: 16px;
+                padding: 15px;
+            }
+            QPushButton {
+                background-color: #007BFF;
+                border: none;
+                color: white;
+                padding: 15px 32px;
+                text-align: center;
+                text-decoration: none;
+                display: inline-block;
+                font-size: 16px;
+                margin: 4px 2px;
+                cursor: pointer;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #0069D9;
+            }
+            """
+        )
+    def on_image_loaded(self, image_data):
+        pixmap = QPixmap()
+        pixmap.loadFromData(image_data)
+        self.image_label.setPixmap(pixmap)
+
+    def on_image_error(self, error_message):
+        print("Error loading image:", error_message)
+        # Handle the error (e.g., display a default image)
+
+    # Method to start loading the image
+    def load_image(self):
+        image_loader = ImageLoader(self.image_url)
+        image_loader.signals.finished.connect(self.on_image_loaded)
+        image_loader.signals.error.connect(self.on_image_error)
+        self.threadpool.start(image_loader)
 
 class AnimeWidget(QWidget):
     def __init__(self, result):
@@ -149,11 +244,20 @@ class MainWindow(QMainWindow):
         self.addToolBar(self.nav_bar)
         self.nav_bar.setMovable(False)
 
+        nav_widget = QWidget()
+        nav_layout = QHBoxLayout()
+        nav_widget.setLayout(nav_layout)
+        nav_layout.addStretch()
+
         # Add buttons to the navigation bar
-        search_button = QPushButton("Search", self)
-        anime_list_button = QPushButton("My Anime List", self)
-        self.nav_bar.addWidget(search_button)
-        self.nav_bar.addWidget(anime_list_button)
+        search_button = QPushButton("Search", nav_widget)
+        anime_list_button = QPushButton("My Anime List", nav_widget)
+        nav_layout.addWidget(search_button)
+        nav_layout.addWidget(anime_list_button)
+
+        nav_layout.addStretch()
+
+        self.nav_bar.addWidget(nav_widget)
 
         # Initialize QStackedWidget
         self.stacked_widget = QStackedWidget()
@@ -184,7 +288,7 @@ class MainWindow(QMainWindow):
             self.window_size[0],
             self.window_size[1],
         )
-        self.setWindowTitle("MAL Adder")
+        self.setWindowTitle("AniTrack")
 
         self.setStyleSheet(
             """
@@ -197,7 +301,7 @@ class MainWindow(QMainWindow):
                 padding: 15px;
             }
             QPushButton {
-                background-color: #007BFF;
+                background-color: #808080;
                 border: none;
                 color: white;
                 padding: 15px;
@@ -210,7 +314,7 @@ class MainWindow(QMainWindow):
                 border-radius: 4px;
             }
             QPushButton:hover {
-                background-color: #0069D9;
+                background-color: #707070;
             }
             """
         )
@@ -292,7 +396,6 @@ class AnimeListInterface(QWidget):
         self.scroll_area.setWidget(self.scroll_widget)
         self.layout = QVBoxLayout()
         self.scroll_widget.setLayout(self.layout)
-
         # Set up the layout for this widget
         self.main_layout = QVBoxLayout(self)
         self.main_layout.addWidget(self.scroll_area)
@@ -307,12 +410,12 @@ class AnimeListInterface(QWidget):
         # Add an AnimeWidget for each anime in the list
         for anime in anime_list:
             try:
-                anime_widget = AnimeWidget(anime)
+                anime_widget = AnimeListWidget(anime)
                 self.layout.addWidget(anime_widget)
                 self.layout.addWidget(horizontal_line())
+                self.layout.update()
             except Exception as e:
                 print("Error creating anime widget:", e)
-        self.layout.update()
 
 class SearchInterface(QWidget):
     def __init__(self, parent=None):
@@ -581,7 +684,7 @@ class ImageLoaderSignals(QObject):
     error = pyqtSignal(str)
 
 def get_mylist():
-    url = "https://api.myanimelist.net/v2/users/@me/animelist?limit=1000&fields=id,title,mean,main_picture,alternative_titles,popularity,synopsis&nsfw=true"
+    url = "https://api.myanimelist.net/v2/users/@me/animelist?limit=500&fields=id,title,mean,main_picture,alternative_titles,popularity,synopsis&nsfw=true"
     headers = {"Authorization": f'Bearer {token["access_token"]}'}
     try:
         response = requests.get(url, headers=headers)
@@ -589,9 +692,9 @@ def get_mylist():
         reply = response.json()
 
         anime_list = reply.get('data', [])
-        
+        random.shuffle(anime_list)
         indexed_nodes = []
-        for i, item in enumerate(anime_list, start=1):
+        for i, item in enumerate(anime_list[:10], start=1):
             node_dict = {
                 "id": item["node"]["id"] if "id" in item["node"] else None,
                 "title": item["node"]["title"] if "title" in item["node"] else None,
