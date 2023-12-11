@@ -9,7 +9,15 @@ from urllib.parse import quote
 
 import requests
 from main import get_code_verifier, refresh_token, getClientId
-from PyQt5.QtCore import QUrl, Qt, QPropertyAnimation, QThreadPool, QRunnable, pyqtSignal, QObject
+from PyQt5.QtCore import (
+    QUrl,
+    Qt,
+    QPropertyAnimation,
+    QThreadPool,
+    QRunnable,
+    pyqtSignal,
+    QObject,
+)
 from PyQt5.QtGui import QPixmap, QFont
 from PyQt5.QtWidgets import (
     QWidget,
@@ -37,6 +45,7 @@ clientId = None
 token = None
 mal_folder = None
 
+
 class AnimeListWidget(QWidget):
     def __init__(self, result):
         super(AnimeListWidget, self).__init__()
@@ -44,7 +53,12 @@ class AnimeListWidget(QWidget):
         font = QFont()
         font.setPointSize(18)  # Set the size
         font.setBold(True)  # Make it bold
-        title = result["alternative_titles"]["en"] if "en" in result["alternative_titles"] and result["alternative_titles"]["en"] else result["title"]
+        title = (
+            result["alternative_titles"]["en"]
+            if "en" in result["alternative_titles"]
+            and result["alternative_titles"]["en"]
+            else result["title"]
+        )
         # Widgets
         title_label = QLabel(title)
         title_label.setFont(font)
@@ -60,14 +74,19 @@ class AnimeListWidget(QWidget):
         image_loader.signals.error.connect(self.on_image_error)
         self.threadpool.start(image_loader)
 
-
         open_button = QPushButton("Stream Here!")
         open_button.clicked.connect(
-            lambda: webbrowser.open("crunchyroll.com/search?q=" + title.replace(" ", "%20"))
+            lambda: webbrowser.open(
+                "crunchyroll.com/search?q=" + title.replace(" ", "%20")
+            )
         )
 
         add_button = QPushButton("Browse Merch!")
-        add_button.clicked.connect(lambda: webbrowser.open("google.com/search?q=" + title.replace(" ", "+") + "+merchandise"))
+        add_button.clicked.connect(
+            lambda: webbrowser.open(
+                "google.com/search?q=" + title.replace(" ", "+") + "+merchandise"
+            )
+        )
 
         # Layouts
         main_layout = QVBoxLayout()
@@ -116,6 +135,7 @@ class AnimeListWidget(QWidget):
             }
             """
         )
+
     def on_image_loaded(self, image_data):
         pixmap = QPixmap()
         pixmap.loadFromData(image_data)
@@ -131,6 +151,7 @@ class AnimeListWidget(QWidget):
         image_loader.signals.finished.connect(self.on_image_loaded)
         image_loader.signals.error.connect(self.on_image_error)
         self.threadpool.start(image_loader)
+
 
 class AnimeWidget(QWidget):
     def __init__(self, result):
@@ -159,7 +180,6 @@ class AnimeWidget(QWidget):
         image_loader.signals.finished.connect(self.on_image_loaded)
         image_loader.signals.error.connect(self.on_image_error)
         self.threadpool.start(image_loader)
-
 
         open_button = QPushButton("Open in browser")
         open_button.clicked.connect(
@@ -218,6 +238,7 @@ class AnimeWidget(QWidget):
             }
             """
         )
+
     def on_image_loaded(self, image_data):
         pixmap = QPixmap()
         pixmap.loadFromData(image_data)
@@ -233,6 +254,7 @@ class AnimeWidget(QWidget):
         image_loader.signals.finished.connect(self.on_image_loaded)
         image_loader.signals.error.connect(self.on_image_error)
         self.threadpool.start(image_loader)
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -251,7 +273,7 @@ class MainWindow(QMainWindow):
 
         # Add buttons to the navigation bar
         search_button = QPushButton("Search", nav_widget)
-        anime_list_button = QPushButton("My Anime List", nav_widget)
+        anime_list_button = QPushButton("Anime List", nav_widget)
         nav_layout.addWidget(search_button)
         nav_layout.addWidget(anime_list_button)
 
@@ -271,8 +293,6 @@ class MainWindow(QMainWindow):
 
         search_button.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(0))
         anime_list_button.clicked.connect(self.show_and_update_anime_list)
-
-        
 
         self.window_size = (
             int(screen_size.width() * 0.35),
@@ -320,7 +340,7 @@ class MainWindow(QMainWindow):
         )
 
         self.initUI()
-    
+
     def show_and_update_anime_list(self):
         # Switch to the AnimeListInterface
         self.stacked_widget.setCurrentWidget(self.anime_list_interface)
@@ -331,7 +351,6 @@ class MainWindow(QMainWindow):
     def update_anime_list(self):
         anime_list = get_mylist()  # Call your backend function to fetch the list
         self.anime_list_interface.display_anime_list(anime_list)
-
 
     def token_init(self):
         global clientId
@@ -417,6 +436,7 @@ class AnimeListInterface(QWidget):
             except Exception as e:
                 print("Error creating anime widget:", e)
 
+
 class SearchInterface(QWidget):
     def __init__(self, parent=None):
         super(SearchInterface, self).__init__(parent)
@@ -434,7 +454,7 @@ class SearchInterface(QWidget):
         self.scroll_widget.setLayout(self.layout)
 
         self.main_layout = QVBoxLayout(self)
-        #self.setCentralWidget(self.central_widget)
+        # self.setCentralWidget(self.central_widget)
 
         self.toast_message = QLabel()
         self.toast_message.setStyleSheet("background-color: #333; color: #FFF;")
@@ -451,7 +471,6 @@ class SearchInterface(QWidget):
         self.main_layout.addWidget(self.scroll_area)
         self.main_layout.addWidget(self.toast_message)
 
-    
     def display_toast_message(self, message, duration=3000):
         # Show the message and then hide it after 'duration' milliseconds
         self.toast_message.setText(message)
@@ -519,7 +538,6 @@ class SearchInterface(QWidget):
             anime_widget = AnimeWidget(result)
             self.layout.addWidget(anime_widget)
             self.layout.addWidget(horizontal_line())
-
 
 
 class AuthWindow(QDialog):
@@ -665,6 +683,7 @@ class BrowserWindow(QWebEngineView):
         self.confirm_close = False  # Don't show confirmation
         self.close()  # Close the window
 
+
 class ImageLoader(QRunnable):
     def __init__(self, url):
         super().__init__()
@@ -679,9 +698,11 @@ class ImageLoader(QRunnable):
         except Exception as e:
             self.signals.error.emit(str(e))
 
+
 class ImageLoaderSignals(QObject):
     finished = pyqtSignal(bytes)
     error = pyqtSignal(str)
+
 
 def get_mylist():
     url = "https://api.myanimelist.net/v2/users/@me/animelist?limit=500&fields=id,title,mean,main_picture,alternative_titles,popularity,synopsis&nsfw=true"
@@ -691,8 +712,7 @@ def get_mylist():
         response.raise_for_status()
         reply = response.json()
 
-        anime_list = reply.get('data', [])
-        random.shuffle(anime_list)
+        anime_list = reply.get("data", [])
         indexed_nodes = []
         for i, item in enumerate(anime_list[:10], start=1):
             node_dict = {
@@ -718,6 +738,7 @@ def get_mylist():
     except requests.exceptions.RequestException as e:
         print("HTTP search error: ", e)
         return []
+
 
 def add_anime(id_):
     global window
