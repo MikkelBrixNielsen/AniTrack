@@ -1,4 +1,3 @@
-import random
 import sys
 import json
 import os
@@ -6,6 +5,8 @@ import time
 import re
 import webbrowser
 from urllib.parse import quote
+import json
+import secrets
 
 import requests
 from main import get_code_verifier, refresh_token, getClientId
@@ -44,7 +45,6 @@ screen_size = None
 clientId = None
 token = None
 mal_folder = None
-
 
 class AnimeListWidget(QWidget):
     def __init__(self, result):
@@ -763,6 +763,95 @@ def add_anime(id_):
         print(f"Timeout error occurred: {e}")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
+
+def refresh_token():
+    data = {
+        "client_id": clientId,
+        "grant_type": "refresh_token",
+        "refresh_token": token["refresh_token"],
+    }
+    try:
+        response = requests.post("https://myanimelist.net/v1/oauth2/token", data=data)
+        response.raise_for_status()
+        token_data = json.loads(response.text)
+        save_token(token_data)
+        print("Token refreshed")
+        return token_data
+    except requests.exceptions.RequestException as e:
+        print("Token refresh error:", e)
+        print("Trying new authentication")
+        authenticator()
+
+def getClientId():
+    try:
+        response = requests.get(
+            "https://suiz.org/api/mal?client=MALadder", headers={"Client": "MALadder"}
+        )
+        response.raise_for_status()
+        reply = json.loads(response.text)
+        return reply["clientId"]
+    except requests.exceptions.RequestException as e:
+        print("HTTP request error: ", e)
+
+def get_code_verifier() -> str:
+    token = secrets.token_urlsafe(100)
+    return token[:128]
+
+def getToken(code, code_verifier):
+    global mal_folder
+    data = {
+        "client_id": clientId,
+        "code": code,
+        "code_verifier": code_verifier,
+        "grant_type": "authorization_code",
+    }
+    try:
+        response = requests.post("https://myanimelist.net/v1/oauth2/token", data=data)
+        response.raise_for_status()
+        token_data = json.loads(response.text)
+        save_token(token_data)
+        return token_data
+    except requests.exceptions.RequestException as e:
+        print("Token http request error:", e)
+
+
+def save_token(token_data):
+    token_data["expiration_time"] = int(time.time()) + token_data["expires_in"]
+    with open(os.path.join(mal_folder, "token.json"), "w") as file:
+        json.dump(token_data, file)
+
+def authenticator():
+    code_verifier = code_challenge = get_code_verifier()
+    print(
+        "Go to the following URL to authorize the application: \n https://myanimelist.net/v1/oauth2/authorize?response_type=code&client_id="
+        + clientId
+        + "&code_challenge="
+        + code_challenge
+        + "&state=RequestID"
+    )
+    while True:
+        code = input("Paste in the URL you are redirected to here: ")
+        match = re.search(r"code=(.*?)&state=RequestID", code)
+        if match:
+            return getToken(match.group(1), code_verifier)
+        else:
+            print("Not valid, please try again.")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def horizontal_line():
