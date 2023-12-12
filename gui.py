@@ -9,7 +9,6 @@ import json
 import secrets
 
 import requests
-from main import get_code_verifier, refresh_token, getClientId
 from PyQt5.QtCore import (
     QUrl,
     Qt,
@@ -46,9 +45,9 @@ clientId = None
 token = None
 mal_folder = None
 
-class AnimeListWidget(QWidget):
+class ListWidget(QWidget):
     def __init__(self, result):
-        super(AnimeListWidget, self).__init__()
+        super(ListWidget, self).__init__()
 
         font = QFont()
         font.setPointSize(18)  # Set the size
@@ -58,10 +57,13 @@ class AnimeListWidget(QWidget):
             if "en" in result["alternative_titles"]
             and result["alternative_titles"]["en"]
             else result["title"]
-        )
+        ) + " - ("+ result["status"].replace("_", " ") +")"
         # Widgets
         title_label = QLabel(title)
         title_label.setFont(font)
+        rating_label = QLabel("⭐ Rating: " + str(result["mean"]))
+        rating_label.setFont(font)
+
         synopsis_label = QLabel(result["synopsis"][:500] + "...")
         synopsis_label.setWordWrap(True)
         synopsis_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -74,7 +76,7 @@ class AnimeListWidget(QWidget):
         image_loader.signals.error.connect(self.on_image_error)
         self.threadpool.start(image_loader)
 
-        open_button = QPushButton("Stream Here!")
+        open_button = QPushButton("View Here!")
         open_button.clicked.connect(
             lambda: webbrowser.open(
                 "crunchyroll.com/search?q=" + title.replace(" ", "%20")
@@ -92,7 +94,15 @@ class AnimeListWidget(QWidget):
         main_layout = QVBoxLayout()
         self.setLayout(main_layout)
 
-        main_layout.addWidget(title_label)
+        labels_layout = QHBoxLayout()
+        # Add labels to the sub-layout
+        labels_layout.addWidget(title_label)
+        if str(result["mean"]) != "None":
+            labels_layout.addStretch(1)  # Add stretchable space between labels
+            labels_layout.addWidget(rating_label)
+
+        # Add the sub-layout to the main layout
+        main_layout.addLayout(labels_layout)
 
         h_layout = QHBoxLayout()
         main_layout.addLayout(h_layout)
@@ -153,22 +163,25 @@ class AnimeListWidget(QWidget):
         self.threadpool.start(image_loader)
 
 
-class AnimeWidget(QWidget):
-    def __init__(self, result):
-        super(AnimeWidget, self).__init__()
+class Widget(QWidget):
+    def __init__(self, caller, result, contentType):
+        super(Widget, self).__init__()
 
         font = QFont()
         font.setPointSize(18)  # Set the size
         font.setBold(True)  # Make it bold
 
         # Widgets
-        title_label = QLabel(
-            result["alternative_titles"]["en"]
-            if "en" in result["alternative_titles"]
-            and result["alternative_titles"]["en"]
-            else result["title"]
-        )
+        title = (result["alternative_titles"]["en"] 
+                 if "en" in result["alternative_titles"] 
+                 and result["alternative_titles"]["en"] 
+                 else result["title"])
+        title_label = QLabel(title)
         title_label.setFont(font)
+
+        rating_label = QLabel("⭐ Rating: " + str(result["mean"]))
+        rating_label.setFont(font)
+
         synopsis_label = QLabel(result["synopsis"][:500] + "...")
         synopsis_label.setWordWrap(True)
         synopsis_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -181,21 +194,33 @@ class AnimeWidget(QWidget):
         image_loader.signals.error.connect(self.on_image_error)
         self.threadpool.start(image_loader)
 
+        self.contentType = quote(contentType)
         open_button = QPushButton("Open in browser")
         open_button.clicked.connect(
             lambda: webbrowser.open(
-                "https://myanimelist.net/anime/" + str(result["id"])
+                "https://myanimelist.net/"+self.contentType+"/"+str(result["id"])
             )
         )
 
         add_button = QPushButton("Add to list")
-        add_button.clicked.connect(lambda: add_anime(result["id"]))
+        add_button.clicked.connect(lambda: caller.add_content(result["id"], self.contentType))
 
         # Layouts
         main_layout = QVBoxLayout()
         self.setLayout(main_layout)
 
-        main_layout.addWidget(title_label)
+
+        labels_layout = QHBoxLayout()
+        # Add labels to the sub-layout
+        labels_layout.addWidget(title_label)
+        
+        if str(result["mean"]) != "None":
+            labels_layout.addStretch(1)  # Add stretchable space between labels
+            labels_layout.addWidget(rating_label)
+
+        # Add the sub-layout to the main layout
+        main_layout.addLayout(labels_layout)
+
 
         h_layout = QHBoxLayout()
         main_layout.addLayout(h_layout)
@@ -272,30 +297,44 @@ class MainWindow(QMainWindow):
         nav_layout.addStretch()
 
         # Add buttons to the navigation bar
-        search_button = QPushButton("Search", nav_widget)
+        home_button = QPushButton("Home", nav_widget)
+        search_anime_button = QPushButton("Search Anime", nav_widget)
+        search_manga_button = QPushButton("Search Manga", nav_widget)
         anime_list_button = QPushButton("Anime List", nav_widget)
-        nav_layout.addWidget(search_button)
+        manga_list_button = QPushButton("Manga List", nav_widget)
+
+        nav_layout.addWidget(home_button)
+        nav_layout.addWidget(search_anime_button)
+        nav_layout.addWidget(search_manga_button)
         nav_layout.addWidget(anime_list_button)
-
+        nav_layout.addWidget(manga_list_button)
         nav_layout.addStretch()
-
         self.nav_bar.addWidget(nav_widget)
 
         # Initialize QStackedWidget
         self.stacked_widget = QStackedWidget()
         self.setCentralWidget(self.stacked_widget)
 
-        self.search_interface = SearchInterface()
-        self.anime_list_interface = AnimeListInterface()
+        self.home_interface = HomeInterface()
+        self.search_anime_interface = SearchAnimeInterface()
+        self.search_manga_interface = SearchMangaInterface()
+        self.anime_list_interface = ListInterface()
+        self.manga_list_interface = ListInterface()
 
-        self.stacked_widget.addWidget(self.search_interface)
+        self.stacked_widget.addWidget(self.home_interface)
+        self.stacked_widget.addWidget(self.search_anime_interface)
+        self.stacked_widget.addWidget(self.search_manga_interface)
         self.stacked_widget.addWidget(self.anime_list_interface)
+        self.stacked_widget.addWidget(self.manga_list_interface)
 
-        search_button.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(0))
+        home_button.clicked.connect(self.goto_home)
+        search_anime_button.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(1))
+        search_manga_button.clicked.connect(self.goto_manga_search)
         anime_list_button.clicked.connect(self.show_and_update_anime_list)
+        manga_list_button.clicked.connect(self.show_and_update_manga_list)
 
         self.window_size = (
-            int(screen_size.width() * 0.35),
+            int(screen_size.width() * 0.40),
             int(screen_size.height() * 0.90),
         )
         self.window_position = (
@@ -341,16 +380,32 @@ class MainWindow(QMainWindow):
 
         self.initUI()
 
+    def goto_home(self):
+        # Switch to the homeInterface
+        self.stacked_widget.setCurrentWidget(self.home_interface)
+        self.home_interface.load_image()
+
+    def goto_manga_search(self):
+        # Switch to the SearchMangaInterface
+        self.stacked_widget.setCurrentWidget(self.search_manga_interface)
+
     def show_and_update_anime_list(self):
-        # Switch to the AnimeListInterface
+        # Switch to the ListInterface
         self.stacked_widget.setCurrentWidget(self.anime_list_interface)
 
         # Update the anime list
-        self.update_anime_list()
+        self.update_list("anime")
 
-    def update_anime_list(self):
-        anime_list = get_mylist()  # Call your backend function to fetch the list
-        self.anime_list_interface.display_anime_list(anime_list)
+    def show_and_update_manga_list(self):
+        # Switch to the ListInterface
+        self.stacked_widget.setCurrentWidget(self.manga_list_interface)
+
+        # Update the manga list
+        self.update_list("manga")
+        
+    def update_list(self, contentType):
+        list = get_mylist(contentType)  # Call your backend function to fetch the list
+        getattr(self, contentType+"_list_interface").display_list(list)
 
     def token_init(self):
         global clientId
@@ -401,15 +456,13 @@ class MainWindow(QMainWindow):
     def initUI(self):
         pass
 
-
-class AnimeListInterface(QWidget):
+class ListInterface(QWidget):
     def __init__(self, parent=None):
-        super(AnimeListInterface, self).__init__(parent)
+        super(ListInterface, self).__init__(parent)
 
         # Initialize the scroll area for displaying anime list
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
-
         # Initialize a widget and a layout for the scroll area
         self.scroll_widget = QWidget()
         self.scroll_area.setWidget(self.scroll_widget)
@@ -419,18 +472,18 @@ class AnimeListInterface(QWidget):
         self.main_layout = QVBoxLayout(self)
         self.main_layout.addWidget(self.scroll_area)
 
-    def display_anime_list(self, anime_list):
+    def display_list(self, list):
         # Clear the layout first
         for i in reversed(range(self.layout.count())):
             widget_to_remove = self.layout.itemAt(i).widget()
             if widget_to_remove:
                 widget_to_remove.setParent(None)
 
-        # Add an AnimeWidget for each anime in the list
-        for anime in anime_list:
+        # Add an Widget for each anime in the list
+        for item in list:
             try:
-                anime_widget = AnimeListWidget(anime)
-                self.layout.addWidget(anime_widget)
+                widget = ListWidget(item)
+                self.layout.addWidget(widget)
                 self.layout.addWidget(horizontal_line())
                 self.layout.update()
             except Exception as e:
@@ -442,6 +495,7 @@ class SearchInterface(QWidget):
         super(SearchInterface, self).__init__(parent)
 
         self.search_box = QLineEdit()
+        self.setPlaceholderText(self)
         self.search_box.returnPressed.connect(self.search)
 
         self.scroll_area = QScrollArea()
@@ -454,7 +508,6 @@ class SearchInterface(QWidget):
         self.scroll_widget.setLayout(self.layout)
 
         self.main_layout = QVBoxLayout(self)
-        # self.setCentralWidget(self.central_widget)
 
         self.toast_message = QLabel()
         self.toast_message.setStyleSheet("background-color: #333; color: #FFF;")
@@ -480,17 +533,41 @@ class SearchInterface(QWidget):
         self.toast_message_animation.setEndValue(0.0)  # Fully transparent
         self.toast_message_animation.start()
 
-    def add_anime_success(self, id_):
-        self.display_toast_message(f"Anime with ID {id_} successfully added!")
+    def add_content_success(self, id_, contentType):
+        self.display_toast_message(contentType+f" with ID {id_} successfully added!")
 
-    def search(self):
-        query = self.search_box.text()
-        results = self.search_mal(query)
-        self.display_results(results)
+    def add_content(self, id_, contentType):
+        status = "plan_to_watch" if contentType == "anime" else "plan_to_read"
+        url = f"https://api.myanimelist.net/v2/{contentType}/{id_}/my_list_status"
+        data = {"status": status}
+        headers = {"Authorization": f'Bearer {token["access_token"]}'}
+        try:
+            response = requests.put(url, data=data, headers=headers)
+            response.raise_for_status()
+            print(f"HTTP response code: {response.status_code}")  # Print HTTP response code
+            print(
+                f"{contentType} with ID {id_} successfully added to '"+status+"' list."
+            )  # Confirmation message
+            self.add_content_success(id_, contentType)
+        except requests.exceptions.RequestException as e:
+            print(f"An error occurred: {e}")
+        except requests.exceptions.HTTPError as e:
+            print(f"HTTP error occurred: {e}")
+        except requests.exceptions.ConnectionError as e:
+            print(f"Error connecting to the server: {e}")
+        except requests.exceptions.Timeout as e:
+            print(f"Timeout error occurred: {e}")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
 
-    def search_mal(self, query):
+    def search():
+        # MUST be implemented in each interface that inherits this one
+        pass
+
+    def search_mal(self, query, contentType):
+        contentType = quote(contentType)
         query = quote(query)
-        url = f"https://api.myanimelist.net/v2/anime?q={query}&limit=10&fields=id,title,mean,main_picture,alternative_titles,popularity,synopsis&nsfw=true"
+        url = f"https://api.myanimelist.net/v2/{contentType}?q={query}&limit=100&fields=id,title,mean,main_picture,alternative_titles,popularity,synopsis&nsfw=true"
         headers = {
             "X-MAL-CLIENT-ID": clientId,
             "Content-Type": "application/x-www-form-urlencoded",
@@ -503,7 +580,7 @@ class SearchInterface(QWidget):
                 reply["data"], key=lambda x: x["node"]["popularity"]
             )
             indexed_nodes = []
-            for i, item in enumerate(search_results, start=1):
+            for i, item in enumerate(search_results[:15], start=1):
                 node_dict = {
                     "id": item["node"]["id"] if "id" in item["node"] else None,
                     "title": item["node"]["title"] if "title" in item["node"] else None,
@@ -527,17 +604,34 @@ class SearchInterface(QWidget):
         except requests.exceptions.RequestException as e:
             print("HTTP search error: ", e)
             return []
-
-    def display_results(self, results):
+    
+    def display_results(self, results, contentType):
         # Clear the layout first
         for i in reversed(range(self.layout.count())):
             self.layout.itemAt(i).widget().setParent(None)
 
-        # Add an AnimeWidget for each result
+        # Add a Widget for each result
         for result in results:
-            anime_widget = AnimeWidget(result)
-            self.layout.addWidget(anime_widget)
+            widget = Widget(self, result, contentType)
+            self.layout.addWidget(widget)
             self.layout.addWidget(horizontal_line())
+
+class SearchAnimeInterface(SearchInterface):
+    def search(self):
+        results = self.search_mal(self.search_box.text(), "anime")
+        self.display_results(results, "anime")
+    
+    def setPlaceholderText(self, caller):
+        caller.search_box.setPlaceholderText("Search for anime here...")
+    
+
+class SearchMangaInterface(SearchInterface):
+    def search(self):
+        results = self.search_mal(self.search_box.text(), "manga")
+        self.display_results(results, "manga")
+        
+    def setPlaceholderText(self, caller):
+        caller.search_box.setPlaceholderText("Search for manga here...")
 
 
 class AuthWindow(QDialog):
@@ -703,18 +797,38 @@ class ImageLoaderSignals(QObject):
     finished = pyqtSignal(bytes)
     error = pyqtSignal(str)
 
+class HomeInterface(QWidget):
+    def __init__(self, parent=None):
+        super(HomeInterface, self).__init__(parent)
+        self.main_layout = QVBoxLayout(self)
 
-def get_mylist():
-    url = "https://api.myanimelist.net/v2/users/@me/animelist?limit=500&fields=id,title,mean,main_picture,alternative_titles,popularity,synopsis&nsfw=true"
+        # Create a QLabel to display the image
+        self.image_label = QLabel(self)
+        self.load_image()
+
+        # Main layout
+        self.main_layout.addWidget(self.image_label)
+
+    def load_image(self, path="OPPERTUN.png"):
+        # Load and display the image in the QLabel
+        pixmap = QPixmap(path)
+        pixmap = pixmap.scaled(2331//3, 3454//3)  # Resize the image while maintaining the aspect ratio
+        self.image_label.setPixmap(pixmap)
+        self.image_label.setScaledContents(True)
+
+
+
+def get_mylist(contentType):
+    contentType = quote(contentType)
+    url = f"https://api.myanimelist.net/v2/users/@me/{contentType}list?limit=500&fields=id,title,mean,main_picture,alternative_titles,popularity,synopsis,my_list_status&nsfw=true"
     headers = {"Authorization": f'Bearer {token["access_token"]}'}
     try:
         response = requests.get(url, headers=headers)
         response.raise_for_status()
         reply = response.json()
-
-        anime_list = reply.get("data", [])
+        list = reply.get("data", [])
         indexed_nodes = []
-        for i, item in enumerate(anime_list[:10], start=1):
+        for i, item in enumerate(list[:15], start=1):
             node_dict = {
                 "id": item["node"]["id"] if "id" in item["node"] else None,
                 "title": item["node"]["title"] if "title" in item["node"] else None,
@@ -731,6 +845,7 @@ def get_mylist():
                 if "synopsis" in item["node"]
                 else None,
                 "mean": item["node"]["mean"] if "mean" in item["node"] else None,
+                "status": item["node"]["my_list_status"]["status"]
             }
 
             indexed_nodes.append(node_dict)
@@ -738,31 +853,6 @@ def get_mylist():
     except requests.exceptions.RequestException as e:
         print("HTTP search error: ", e)
         return []
-
-
-def add_anime(id_):
-    global window
-    url = f"https://api.myanimelist.net/v2/anime/{id_}/my_list_status"
-    data = {"status": "plan_to_watch"}
-    headers = {"Authorization": f'Bearer {token["access_token"]}'}
-    try:
-        response = requests.put(url, data=data, headers=headers)
-        response.raise_for_status()
-        print(f"HTTP response code: {response.status_code}")  # Print HTTP response code
-        print(
-            f"Anime with ID {id_} successfully added to 'plan to watch' list."
-        )  # Confirmation message
-        window.add_anime_success(id_)
-    except requests.exceptions.RequestException as e:
-        print(f"An error occurred: {e}")
-    except requests.exceptions.HTTPError as e:
-        print(f"HTTP error occurred: {e}")
-    except requests.exceptions.ConnectionError as e:
-        print(f"Error connecting to the server: {e}")
-    except requests.exceptions.Timeout as e:
-        print(f"Timeout error occurred: {e}")
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
 
 def refresh_token():
     data = {
@@ -814,7 +904,6 @@ def getToken(code, code_verifier):
     except requests.exceptions.RequestException as e:
         print("Token http request error:", e)
 
-
 def save_token(token_data):
     token_data["expiration_time"] = int(time.time()) + token_data["expires_in"]
     with open(os.path.join(mal_folder, "token.json"), "w") as file:
@@ -837,23 +926,6 @@ def authenticator():
         else:
             print("Not valid, please try again.")
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def horizontal_line():
     line = QFrame()
     line.setFrameShape(QFrame.HLine)
@@ -861,7 +933,6 @@ def horizontal_line():
     line.setFixedHeight(1)
     line.setStyleSheet("background-color: #003e80;")
     return line
-
 
 def window():
     global screen_size
@@ -872,10 +943,8 @@ def window():
     window.show()
     sys.exit(app.exec())
 
-
 def main():
     window()
-
 
 if __name__ == "__main__":
     main()
