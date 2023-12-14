@@ -8,6 +8,7 @@ from urllib.parse import quote
 import json
 import secrets
 import requests
+from functools import partial
 from PyQt5.QtCore import (
     QUrl,
     Qt,
@@ -25,6 +26,7 @@ from PyQt5.QtWidgets import (
     QMainWindow,
     QDialog,
     QVBoxLayout,
+    QListView,
     QLabel,
     QToolBar,
     QPushButton,
@@ -93,59 +95,61 @@ class BaseWidget(QWidget):
             labels_layout.addStretch(1)  # Add stretchable space between labels
             labels_layout.addWidget(self.rating_label)
 
-        status_layout = QHBoxLayout()
-        # Create status and score picker drop down 
+        if type == "list":
+            status_layout = QHBoxLayout()
+            # Create status, watched, and score picker drop down 
+            status_list = (["watching", "plan_to_watch", "completed", "on_hold", "dropped"] 
+                           if contentType == "anime" 
+                           else ["reading", "plan_to_read", "completed", "on_hold", "dropped"])
+            score_list = [10,9,8,7,6,5,4,3,2,1,0]
 
-        status_list = (["watching", "plan_to_watch", "completed", "on_hold", "dropped"] 
-                      if contentType == "anime" 
-                      else ["reading", "plan_to_read", "completed", "on_hold", "dropped"])
-        score_list = [10,9,8,7,6,5,4,3,2,1,0]
+            self.status_label = QLabel("Status:")
+            self.status_label.setFont(self.font)
+            status_layout.addWidget(self.status_label)
 
-        self.status_label = QLabel("Status:")
-        self.status_label.setFont(self.font)
-        status_layout.addWidget(self.status_label)
-
-        self.status_box = QComboBox(self)
-        current_status = result["status"]
-        if current_status != None:
-            current_status = current_status.replace("_", " ")
-        else:
-            current_status = "None"
-        self.status_box.addItem(current_status)
-        for status in status_list:
-            if status != current_status:
-                self.status_box.addItem(status.replace("_", " "))
+            self.status_box = QComboBox(self)
+            current_status = result["status"]
+            if current_status != None:
+                current_status = current_status.replace("_", " ")
+            else:
+                current_status = "None"
+            self.status_box.addItem(current_status)
+            for status in status_list:
+                if status != current_status:
+                    self.status_box.addItem(status.replace("_", " "))
             
-        # Set the text color using a stylesheet
-        self.status_box.setStyleSheet("color: white;")
+            # Set the text color using a stylesheet
+            self.status_box.setStyleSheet("color: white;")
             
-        # Connect the signal emitted when an item is selected to a custom slot
-        self.status_box.currentIndexChanged.connect(self.on_status_box_changed)
-        status_layout.addWidget(self.status_box)
+            # Connect the signal emitted when an item is selected to a custom slot
+            self.status_box.currentIndexChanged.connect(self.on_status_box_changed)
+            status_layout.addWidget(self.status_box)
 
-        # Lable for the score you have given
-        self.score_label = QLabel("Your Score:")
-        self.score_label.setFont(self.font)
-        status_layout.addStretch(1)  # Add stretchable space between boxes
-        status_layout.addWidget(self.score_label)
+            # Label for the score you have given
+            self.score_label = QLabel("Your Score:")
+            self.score_label.setFont(self.font)
+            status_layout.addStretch(1)  # Add stretchable space between boxes
+            status_layout.addWidget(self.score_label)
 
-        self.score_box = QComboBox(self)
-        current_score = result["score"]
-        self.score_box.addItem(str(current_score))
-        for score in score_list:
-            if score != current_score:
-                self.score_box.addItem(str(score))
+            self.score_box = QComboBox(self)
+            current_score = result["score"]
+            self.score_box.addItem(str(current_score))
+            for score in score_list:
+                if score != current_score:
+                    self.score_box.addItem(str(score))
             
-        # Set the text color using a stylesheet
-        self.score_box.setStyleSheet("color: white;")
+            # Set the text color using a stylesheet
+            self.score_box.setStyleSheet("color: white;")
             
-        # Connect the signal emitted when an item is selected to a custom slot
-        self.score_box.currentIndexChanged.connect(self.on_score_box_changed)
-        status_layout.addWidget(self.score_box)
+            # Connect the signal emitted when an item is selected to a custom slot
+            self.score_box.currentIndexChanged.connect(self.on_score_box_changed)
+            status_layout.addWidget(self.score_box)
 
         # Add the sub-layout to the main layout
         main_layout.addLayout(labels_layout)
-        main_layout.addLayout(status_layout)
+        if type == "list":
+            main_layout.addLayout(status_layout)
+
 
         h_layout = QHBoxLayout()
         main_layout.addLayout(h_layout)
@@ -204,17 +208,15 @@ class BaseWidget(QWidget):
                 padding: 15px 32px;
                 text-align: center;
                 text-decoration: none;
-                display: inline-block;
                 font-size: 16px;
                 margin: 4px 2px;
-                cursor: pointer;
                 border-radius: 4px;
             }
             QPushButton:hover {
                 background-color: #0069D9;
             }
             """
-        )
+        )        
 
     def on_box_changed(self, type):
         id = self.result["id"]
@@ -270,10 +272,30 @@ class BaseWidget(QWidget):
         image_loader.signals.error.connect(self.on_image_error)
         self.threadpool.start(image_loader)
 
+
+class UpdateListWorker(QRunnable):
+    def __init__(self, main_window, content_type):
+        super(UpdateListWorker, self).__init__()
+        self.main_window = main_window
+        self.content_type = content_type
+
+    def run(self):
+        # Perform the update operation
+        content_list = get_mylist(self.content_type, token)
+
+        # Emit a signal to update the UI with the content list
+        self.main_window.update_list_signal.emit(content_list, self.content_type)
+
 class MainWindow(QMainWindow):
+    update_list_signal = pyqtSignal(list, str)
+
     def __init__(self):
         super(MainWindow, self).__init__()
         self.token_init()
+        self.threadpool = QThreadPool()
+
+        # Connect the signal to a slot for updating the UI with the content list
+        self.update_list_signal.connect(self.update_ui_with_list)
 
         # Create the navigation bar
         self.nav_bar = QToolBar("Navigation")
@@ -355,10 +377,8 @@ class MainWindow(QMainWindow):
                 padding: 15px;
                 text-align: center;
                 text-decoration: none;
-                display: inline-block;
                 font-size: 16px;
                 margin: 4px 2px;
-                cursor: pointer;
                 border-radius: 4px;
             }
             QPushButton:hover {
@@ -379,22 +399,36 @@ class MainWindow(QMainWindow):
         self.stacked_widget.setCurrentWidget(self.search_manga_interface)
 
     def show_and_update_anime_list(self):
+        self.anime_list_interface.clear_layout()
         # Switch to the ListInterface
         self.stacked_widget.setCurrentWidget(self.anime_list_interface)
 
-        # Update the anime list
-        self.update_list("anime")
+        # Use functools.partial to create a function with the desired argument
+        update_list_with_argument = partial(self.update_list, "anime")
+
+        # Start the worker with the partially-applied function
+        self.threadpool.start(update_list_with_argument)
 
     def show_and_update_manga_list(self):
+        self.manga_list_interface.clear_layout()
         # Switch to the ListInterface
         self.stacked_widget.setCurrentWidget(self.manga_list_interface)
 
-        # Update the manga list
-        self.update_list("manga")
-        
-    def update_list(self, contentType):
-        list = get_mylist(contentType, token)
-        getattr(self, contentType+"_list_interface").display_results(list, contentType, "list")
+        # Use functools.partial to create a function with the desired argument
+        update_list_with_argument = partial(self.update_list, "manga")
+
+        # Start the worker with the partially-applied function
+        self.threadpool.start(update_list_with_argument)
+
+    def update_list(self, content_type):
+        # Create a worker instance and move it to the thread pool
+        worker = UpdateListWorker(self, content_type)
+        self.threadpool.start(worker)
+
+    def update_ui_with_list(self, content_list, content_type):
+        # This slot is called in the main thread when the worker emits the signal
+        # Update the UI with the content list
+        getattr(self, content_type + "_list_interface").display_results(content_list, content_type, "list")
 
     def token_init(self):
         global clientId
@@ -455,7 +489,7 @@ class ListInterface(QWidget):
         # Initialize a widget and a layout for the scroll area
         self.scroll_widget = QWidget()
         self.scroll_area.setWidget(self.scroll_widget)
-        self.layout = QVBoxLayout()
+        self.layout = QVBoxLayout(self)
         self.scroll_widget.setLayout(self.layout)
         # Set up the layout for this widget
         self.main_layout = QVBoxLayout(self)
@@ -470,10 +504,18 @@ class ListInterface(QWidget):
 
         # Add a Widget for each result
         for result in results:
-            widget = BaseWidget(result, type ,self, contentType)
+            widget = BaseWidget(result, type, self, contentType)
             self.layout.addWidget(widget)
             self.layout.addWidget(horizontal_line())
     
+    def clear_layout(self):
+        # Clear the layout by removing all child widgets
+        while self.layout.count():
+            item = self.layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
     def create_search_box(self):
         pass
 
@@ -539,7 +581,7 @@ class SearchInterface(ListInterface):
     def search_mal(self, query, contentType):
         contentType = quote(contentType)
         query = quote(query)
-        url = f"https://api.myanimelist.net/v2/{contentType}?q={query}&limit=100&fields=id,title,mean,main_picture,alternative_titles,popularity,synopsis,my_list_status&nsfw=true"
+        url = f"https://api.myanimelist.net/v2/{contentType}?q={query}&limit=20&fields=id,title,mean,main_picture,alternative_titles,popularity,num_episodes,synopsis,my_list_status&nsfw=true"
         headers = {
             "Authorization": f'Bearer {token["access_token"]}',
             "X-MAL-CLIENT-ID": clientId,
@@ -598,10 +640,8 @@ class AuthWindow(QDialog):
                 padding: 15px 32px;
                 text-align: center;
                 text-decoration: none;
-                display: inline-block;
                 font-size: 16px;
                 margin: 4px 2px;
-                cursor: pointer;
                 border-radius: 4px;
             }
             QPushButton:hover {
@@ -738,10 +778,9 @@ def create_indexed_nodes(url, headers):
     response = requests.get(url, headers=headers)
     response.raise_for_status()
     reply = response.json()
-    #search_results = sorted(
-    #    reply["data"], key=lambda x: x["node"]["popularity"]
-    #)
-    reply = reply.get("data", [])
+    reply = sorted(
+        reply["data"], key=lambda x: x["node"]["popularity"]
+    )
     indexed_nodes = []
     for i, item in enumerate(reply[:15], start=1):
         node_dict = {
@@ -768,7 +807,7 @@ def create_indexed_nodes(url, headers):
 
 def get_mylist(contentType, token):
     contentType = quote(contentType)
-    url = f"https://api.myanimelist.net/v2/users/@me/{contentType}list?limit=500&fields=id,title,mean,main_picture,alternative_titles,popularity,synopsis,my_list_status&nsfw=true"
+    url = f"https://api.myanimelist.net/v2/users/@me/{contentType}list?limit=500&fields=id,title,mean,main_picture,alternative_titles,popularity,synopsis,my_list_status,num_volumes,num_chapters&nsfw=true"
     headers = {"Authorization": f'Bearer {token["access_token"]}'}
     try:
         return create_indexed_nodes(url, headers)
