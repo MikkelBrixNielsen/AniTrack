@@ -46,7 +46,6 @@ clientId = None
 token = None
 mal_folder = None
 
-
 class BaseWidget(QWidget):
     def __init__(self, result, type, caller=None, contentType=None):
         super(BaseWidget, self).__init__()
@@ -62,7 +61,7 @@ class BaseWidget(QWidget):
             if "en" in result["alternative_titles"]
             and result["alternative_titles"]["en"]
             else result["title"]
-        )
+        ) 
         self.title_label = QLabel(self.title)
         self.title_label.setFont(self.font)
 
@@ -98,13 +97,11 @@ class BaseWidget(QWidget):
 
         if type == "list":
             status_layout = QHBoxLayout()
-            # Create status, watched, and score picker drop down
-            status_list = (
-                ["watching", "plan_to_watch", "completed", "on_hold", "dropped"]
-                if contentType == "anime"
-                else ["reading", "plan_to_read", "completed", "on_hold", "dropped"]
-            )
-            score_list = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0]
+            # Create status, watched, and score picker drop down 
+            status_list = (["watching", "plan_to_watch", "completed", "on_hold", "dropped"] 
+                           if contentType == "anime" 
+                           else ["reading", "plan_to_read", "completed", "on_hold", "dropped"])
+            score_list = [10,9,8,7,6,5,4,3,2,1,0]
 
             self.status_label = QLabel("Status:")
             self.status_label.setFont(self.font)
@@ -120,10 +117,10 @@ class BaseWidget(QWidget):
             for status in status_list:
                 if status != current_status:
                     self.status_box.addItem(status.replace("_", " "))
-
+            
             # Set the text color using a stylesheet
             self.status_box.setStyleSheet("color: white;")
-
+            
             # Connect the signal emitted when an item is selected to a custom slot
             self.status_box.currentIndexChanged.connect(self.on_status_box_changed)
             status_layout.addWidget(self.status_box)
@@ -140,10 +137,10 @@ class BaseWidget(QWidget):
             for score in score_list:
                 if score != current_score:
                     self.score_box.addItem(str(score))
-
+            
             # Set the text color using a stylesheet
             self.score_box.setStyleSheet("color: white;")
-
+            
             # Connect the signal emitted when an item is selected to a custom slot
             self.score_box.currentIndexChanged.connect(self.on_score_box_changed)
             status_layout.addWidget(self.score_box)
@@ -152,6 +149,7 @@ class BaseWidget(QWidget):
         main_layout.addLayout(labels_layout)
         if type == "list":
             main_layout.addLayout(status_layout)
+
 
         h_layout = QHBoxLayout()
         main_layout.addLayout(h_layout)
@@ -163,19 +161,19 @@ class BaseWidget(QWidget):
             else:
                 url = "read " + self.title + " manga"
         else:
-            url = "https://myanimelist.net/" + contentType + "/" + str(result["id"])
-
+            url = "https://myanimelist.net/"+contentType+"/"+str(result["id"])
+        
         top_button = QPushButton(topText)
-        top_button.clicked.connect(lambda: webbrowser.open(url))
+        top_button.clicked.connect(
+            lambda: webbrowser.open(url)
+        )
 
         botText = "Browse Merch!" if type == "list" else "Add to list"
         bot_button = QPushButton(botText)
         if type == "list":
             bot_button.clicked.connect(
                 lambda: webbrowser.open(
-                    "https://google.com/search?q="
-                    + self.title.replace(" ", "+")
-                    + "+merchandise"
+                    "https://google.com/search?q=" + self.title.replace(" ", "+") + "+merchandise"
                 )
             )
         else:
@@ -218,15 +216,15 @@ class BaseWidget(QWidget):
                 background-color: #0069D9;
             }
             """
-        )
+        )        
 
     def on_box_changed(self, type):
         id = self.result["id"]
         contentType = quote(self.contentType)
         url = f"https://api.myanimelist.net/v2/{contentType}/{id}/my_list_status"
-
+    
         # Define the new status data
-        status = quote(getattr(self, type + "_box").currentText().replace(" ", "_"))
+        status = quote(getattr(self, type+"_box").currentText().replace(" ", "_"))
         data = {
             type: status,  # The new status, e.g., "watching", "completed", "on_hold", etc.
         }
@@ -247,10 +245,7 @@ class BaseWidget(QWidget):
             print(f"HTTP response code: {response.status_code}")
 
             # Print a confirmation message
-            print(
-                self.contentType
-                + f" with ID {id} status updated to '{status}' successfully."
-            )
+            print(self.contentType + f" with ID {id} status updated to '{status}' successfully.")
         except requests.exceptions.RequestException as e:
             # Handle any exceptions that may occur during the request
             print(f"An error occurred: {e}")
@@ -290,7 +285,6 @@ class UpdateListWorker(QRunnable):
 
         # Emit a signal to update the UI with the content list
         self.main_window.update_list_signal.emit(content_list, self.content_type)
-
 
 class MainWindow(QMainWindow):
     update_list_signal = pyqtSignal(list, str)
@@ -345,9 +339,7 @@ class MainWindow(QMainWindow):
         self.stacked_widget.addWidget(self.manga_list_interface)
 
         home_button.clicked.connect(self.goto_home)
-        search_anime_button.clicked.connect(
-            lambda: self.stacked_widget.setCurrentIndex(1)
-        )
+        search_anime_button.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(1))
         search_manga_button.clicked.connect(self.goto_manga_search)
         anime_list_button.clicked.connect(self.show_and_update_anime_list)
         manga_list_button.clicked.connect(self.show_and_update_manga_list)
@@ -436,9 +428,7 @@ class MainWindow(QMainWindow):
     def update_ui_with_list(self, content_list, content_type):
         # This slot is called in the main thread when the worker emits the signal
         # Update the UI with the content list
-        getattr(self, content_type + "_list_interface").display_results(
-            content_list, content_type, "list"
-        )
+        getattr(self, content_type + "_list_interface").display_results(content_list, content_type, "list")
 
     def token_init(self):
         global clientId
@@ -489,7 +479,6 @@ class MainWindow(QMainWindow):
     def initUI(self):
         pass
 
-
 class ListInterface(QWidget):
     def __init__(self, parent=None):
         super(ListInterface, self).__init__(parent)
@@ -508,7 +497,7 @@ class ListInterface(QWidget):
         self.main_layout.addWidget(self.scroll_area)
 
     def display_results(self, results, contentType, type):
-        # constructor = ListWidget if constType == "list" else SearchWidget
+        #constructor = ListWidget if constType == "list" else SearchWidget
         # Clear the layout first
         for i in reversed(range(self.layout.count())):
             self.layout.itemAt(i).widget().setParent(None)
@@ -518,7 +507,7 @@ class ListInterface(QWidget):
             widget = BaseWidget(result, type, self, contentType)
             self.layout.addWidget(widget)
             self.layout.addWidget(horizontal_line())
-
+    
     def clear_layout(self):
         # Clear the layout by removing all child widgets
         while self.layout.count():
@@ -529,7 +518,6 @@ class ListInterface(QWidget):
 
     def create_search_box(self):
         pass
-
 
 class SearchInterface(ListInterface):
     def __init__(self):
@@ -564,7 +552,7 @@ class SearchInterface(ListInterface):
         self.toast_message_animation.start()
 
     def add_content_success(self, id_, contentType):
-        self.display_toast_message(contentType + f" with ID {id_} successfully added!")
+        self.display_toast_message(contentType+f" with ID {id_} successfully added!")
 
     def add_content(self, id_, contentType):
         status = "plan_to_watch" if contentType == "anime" else "plan_to_read"
@@ -574,13 +562,9 @@ class SearchInterface(ListInterface):
         try:
             response = requests.put(url, data=data, headers=headers)
             response.raise_for_status()
+            print(f"HTTP response code: {response.status_code}")  # Print HTTP response code
             print(
-                f"HTTP response code: {response.status_code}"
-            )  # Print HTTP response code
-            print(
-                f"{contentType} with ID {id_} successfully added to '"
-                + status
-                + "' list."
+                f"{contentType} with ID {id_} successfully added to '"+status+"' list."
             )  # Confirmation message
             self.add_content_success(id_, contentType)
         except requests.exceptions.RequestException as e:
@@ -609,7 +593,6 @@ class SearchInterface(ListInterface):
             print("HTTP search error: ", e)
             return []
 
-
 class SearchAnimeInterface(SearchInterface):
     def __init__(self):
         super(SearchAnimeInterface, self).__init__()
@@ -617,10 +600,10 @@ class SearchAnimeInterface(SearchInterface):
     def search(self):
         results = self.search_mal(self.search_box.text(), "anime")
         self.display_results(results, "anime", "search")
-
+    
     def setPlaceholderText(self, caller):
         caller.search_box.setPlaceholderText("Search for anime here...")
-
+    
 
 class SearchMangaInterface(SearchInterface):
     def __init__(self):
@@ -629,10 +612,9 @@ class SearchMangaInterface(SearchInterface):
     def search(self):
         results = self.search_mal(self.search_box.text(), "manga")
         self.display_results(results, "manga", "search")
-
+        
     def setPlaceholderText(self, caller):
         caller.search_box.setPlaceholderText("Search for manga here...")
-
 
 class AuthWindow(QDialog):
     def __init__(self):
@@ -711,7 +693,6 @@ class AuthWindow(QDialog):
         self.browser.show()
         self.quit_without_confirmation()
 
-
 class BrowserWindow(QWebEngineView):
     def __init__(self, url, code_verifier):
         super().__init__()
@@ -756,7 +737,6 @@ class BrowserWindow(QWebEngineView):
         self.confirm_close = False  # Don't show confirmation
         self.close()  # Close the window
 
-
 class ImageLoader(QRunnable):
     def __init__(self, url):
         super().__init__()
@@ -771,11 +751,9 @@ class ImageLoader(QRunnable):
         except Exception as e:
             self.signals.error.emit(str(e))
 
-
 class ImageLoaderSignals(QObject):
     finished = pyqtSignal(bytes)
     error = pyqtSignal(str)
-
 
 class HomeInterface(QWidget):
     def __init__(self, parent=None):
@@ -798,12 +776,13 @@ class HomeInterface(QWidget):
         )
         self.image_label.setPixmap(scaled_pixmap)
 
-
 def create_indexed_nodes(url, headers):
     response = requests.get(url, headers=headers)
     response.raise_for_status()
     reply = response.json()
-    reply = sorted(reply["data"], key=lambda x: x["node"]["popularity"])
+    reply = sorted(
+        reply["data"], key=lambda x: x["node"]["popularity"]
+    )
     indexed_nodes = []
     for i, item in enumerate(reply[:15], start=1):
         node_dict = {
@@ -822,16 +801,11 @@ def create_indexed_nodes(url, headers):
             if "synopsis" in item["node"]
             else None,
             "mean": item["node"]["mean"] if "mean" in item["node"] else None,
-            "status": item["node"]["my_list_status"]["status"]
-            if "my_list_status" in item["node"]
-            else None,
-            "score": item["node"]["my_list_status"]["score"]
-            if "my_list_status" in item["node"]
-            else None,
+            "status": item["node"]["my_list_status"]["status"] if "my_list_status" in item["node"] else None,
+            "score": item["node"]["my_list_status"]["score"] if "my_list_status" in item["node"] else None,
         }
         indexed_nodes.append(node_dict)
     return indexed_nodes
-
 
 def get_mylist(contentType, token):
     contentType = quote(contentType)
@@ -842,7 +816,6 @@ def get_mylist(contentType, token):
     except requests.exceptions.RequestException as e:
         print("HTTP search error: ", e)
         return []
-
 
 def refresh_token(clientId, token):
     data = {
@@ -862,7 +835,6 @@ def refresh_token(clientId, token):
         print("Trying new authentication")
         authenticator()
 
-
 def getClientId():
     try:
         response = requests.get(
@@ -874,11 +846,9 @@ def getClientId():
     except requests.exceptions.RequestException as e:
         print("HTTP request error: ", e)
 
-
 def get_code_verifier() -> str:
     token = secrets.token_urlsafe(100)
     return token[:128]
-
 
 def getToken(code, code_verifier, clientId, mal_folder):
     data = {
@@ -888,7 +858,9 @@ def getToken(code, code_verifier, clientId, mal_folder):
         "grant_type": "authorization_code",
     }
     try:
-        response = requests.post("https://myanimelist.net/v1/oauth2/token", data=data)
+        response = requests.post(
+            "https://myanimelist.net/v1/oauth2/token", data=data
+            )
         response.raise_for_status()
         token_data = json.loads(response.text)
         save_token(token_data, mal_folder)
@@ -896,12 +868,10 @@ def getToken(code, code_verifier, clientId, mal_folder):
     except requests.exceptions.RequestException as e:
         print("Token http request error:", e)
 
-
 def save_token(token_data, mal_folder):
     token_data["expiration_time"] = int(time.time()) + token_data["expires_in"]
     with open(os.path.join(mal_folder, "token.json"), "w") as file:
         json.dump(token_data, file)
-
 
 def authenticator(clientId):
     code_verifier = code_challenge = get_code_verifier()
@@ -920,7 +890,6 @@ def authenticator(clientId):
         else:
             print("Not valid, please try again.")
 
-
 def horizontal_line():
     line = QFrame()
     line.setFrameShape(QFrame.HLine)
@@ -928,7 +897,6 @@ def horizontal_line():
     line.setFixedHeight(1)
     line.setStyleSheet("background-color: #003e80;")
     return line
-
 
 def window():
     global screen_size
@@ -939,10 +907,8 @@ def window():
     window.show()
     sys.exit(app.exec())
 
-
 def main():
     window()
-
 
 if __name__ == "__main__":
     main()
